@@ -121,6 +121,13 @@ class CrashpadClient {
   //!     option is only used on Windows.
   //! \param[in] attachments Vector that stores file paths that should be
   //!     captured with each report at the time of the crash.
+  //! \param[in] preserve_file_handles Set of OS file handles (file descriptors
+  //!     on POSIX systems, kernel `HANDLE`s on Windows) that should be
+  //!     preserved and inherited by the handler process. The calling code is
+  //!     responsible for keeping these file handles open for as long as they
+  //!     may be needed, such as until background startup completes when
+  //!     `asynchronous_start` is `true`, or across handler restarts when
+  //!     `restartable` is `true`.
   //!
   //! \return `true` on success, `false` on failure with a message logged.
   bool StartHandler(const base::FilePath& handler,
@@ -131,7 +138,8 @@ class CrashpadClient {
                     const std::vector<std::string>& arguments,
                     bool restartable,
                     bool asynchronous_start,
-                    const std::vector<base::FilePath>& attachments = {});
+                    const std::vector<base::FilePath>& attachments = {},
+                    const std::set<FileHandle>& preserve_file_handles = {});
 
 #if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || \
     DOXYGEN

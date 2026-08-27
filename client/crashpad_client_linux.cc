@@ -29,6 +29,9 @@
 #include <unistd.h>
 
 #include <atomic>
+#include <set>
+#include <string>
+#include <vector>
 
 #include "base/check_op.h"
 #include "base/logging.h"
@@ -459,7 +462,8 @@ bool CrashpadClient::StartHandler(
     const std::vector<std::string>& arguments,
     bool restartable,
     bool asynchronous_start,
-    const std::vector<base::FilePath>& attachments) {
+    const std::vector<base::FilePath>& attachments,
+    const std::set<FileHandle>& preserve_file_handles) {
   DCHECK(!asynchronous_start);
 
   ScopedFileHandle client_sock, handler_sock;
@@ -473,7 +477,11 @@ bool CrashpadClient::StartHandler(
 
   argv.push_back(FormatArgumentInt("initial-client-fd", handler_sock.get()));
   argv.push_back("--shared-client-connection");
-  if (!SpawnSubprocess(argv, nullptr, handler_sock.get(), false, nullptr)) {
+
+  std::set<int> spawn_preserve_fds = preserve_file_handles;
+  spawn_preserve_fds.insert(handler_sock.get());
+
+  if (!SpawnSubprocess(argv, nullptr, spawn_preserve_fds, false, nullptr)) {
     return false;
   }
   handler_sock.reset();
@@ -629,7 +637,7 @@ bool CrashpadClient::StartJavaHandlerForClient(
     int socket) {
   std::vector<std::string> argv = BuildAppProcessArgs(
       class_name, database, metrics_dir, url, annotations, arguments, socket);
-  return SpawnSubprocess(argv, env, socket, false, nullptr);
+  return SpawnSubprocess(argv, env, {socket}, false, nullptr);
 }
 
 bool CrashpadClient::StartHandlerWithLinkerAtCrash(
@@ -678,7 +686,7 @@ bool CrashpadClient::StartHandlerWithLinkerForClient(
                                   annotations,
                                   arguments,
                                   socket);
-  return SpawnSubprocess(argv, env, socket, false, nullptr);
+  return SpawnSubprocess(argv, env, {socket}, false, nullptr);
 }
 
 #endif
@@ -712,7 +720,7 @@ bool CrashpadClient::StartHandlerForClient(
 
   argv.push_back(FormatArgumentInt("initial-client-fd", socket));
 
-  return SpawnSubprocess(argv, nullptr, socket, true, nullptr);
+  return SpawnSubprocess(argv, nullptr, {socket}, true, nullptr);
 }
 
 // static
