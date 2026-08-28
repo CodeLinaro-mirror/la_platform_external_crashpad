@@ -192,4 +192,23 @@ void CloseMultipleNowOrOnExec(int fd, const std::set<int>& preserve_fds) {
   }
 }
 
+void ClearCloseOnExec(const std::set<int>& fds) {
+  for (int fd : fds) {
+    int flags = fcntl(fd, F_GETFD);
+    if (flags == -1) {
+      PLOG(WARNING) << "fcntl";
+      continue;
+    }
+
+    if ((flags & FD_CLOEXEC) == 0) {
+      continue;
+    }
+
+    int rv = fcntl(fd, F_SETFD, flags & ~FD_CLOEXEC);
+    if (rv == -1) {
+      PLOG(WARNING) << "fcntl";
+    }
+  }
+}
+
 }  // namespace crashpad

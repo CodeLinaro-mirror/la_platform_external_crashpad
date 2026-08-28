@@ -298,6 +298,10 @@ class CrashpadClient {
   //!     Arguments passed in other parameters and arguments required to perform
   //!     the handshake are the responsibility of this method, and must not be
   //!     specified in this parameter.
+  //! \param[in] preserve_fds Set of file descriptors that should be
+  //!     preserved and inherited by the handler process. The calling code is
+  //!     responsible for keeping these file descriptors open for as long as
+  //!     they may be needed.
   //!
   //! \return `true` on success, `false` on failure with a message logged.
   bool StartHandlerWithLinkerAtCrash(
@@ -309,7 +313,8 @@ class CrashpadClient {
       const base::FilePath& metrics_dir,
       const std::string& url,
       const std::map<std::string, std::string>& annotations,
-      const std::vector<std::string>& arguments);
+      const std::vector<std::string>& arguments,
+      const std::set<int>& preserve_fds = {});
 
   //! \brief Starts a Crashpad handler process with an initial client by loading
   //!     it with `/system/bin/linker`.
@@ -344,6 +349,10 @@ class CrashpadClient {
   //!     specified in this parameter.
   //! \param[in] socket The server end of a socket pair. The client end should
   //!     be used with an ExceptionHandlerClient.
+  //! \param[in] preserve_fds Set of file descriptors that should be
+  //!     preserved and inherited by the handler process. The calling code is
+  //!     responsible for keeping these file descriptors open for as long as
+  //!     they may be needed.
   //!
   //! \return `true` on success, `false` on failure with a message logged.
   static bool StartHandlerWithLinkerForClient(
@@ -356,7 +365,8 @@ class CrashpadClient {
       const std::string& url,
       const std::map<std::string, std::string>& annotations,
       const std::vector<std::string>& arguments,
-      int socket);
+      int socket,
+      const std::set<int>& preserve_fds = {});
 #endif  // BUILDFLAG(IS_ANDROID) || DOXYGEN
 
 #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_CHROMEOS) || \

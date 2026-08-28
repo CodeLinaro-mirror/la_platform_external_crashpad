@@ -41,6 +41,12 @@ namespace crashpad {
 //!     greater than \a fd.
 void CloseMultipleNowOrOnExec(int fd, const std::set<int>& preserve_fds);
 
+//! \brief Clears the close-on-exec flag on a collection of file descriptors.
+//!
+//! \param[in] fds A collection of file descriptors on which to clear
+//!     `FD_CLOEXEC`.
+void ClearCloseOnExec(const std::set<int>& fds);
+
 }  // namespace crashpad
 
 #endif  // CRASHPAD_UTIL_POSIX_CLOSE_MULTIPLE_H_

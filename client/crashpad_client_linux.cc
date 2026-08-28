@@ -48,6 +48,7 @@
 #include "util/linux/socket.h"
 #include "util/misc/address_sanitizer.h"
 #include "util/misc/from_pointer_cast.h"
+#include "util/posix/close_multiple.h"
 #include "util/posix/scoped_mmap.h"
 #include "util/posix/signals.h"
 #include "util/posix/spawn_subprocess.h"
@@ -294,7 +295,9 @@ class LaunchAtCrashHandler : public SignalHandler {
 
   bool Initialize(std::vector<std::string>* argv_in,
                   const std::vector<std::string>* envp,
-                  const std::set<int>* unhandled_signals) {
+                  const std::set<int>* unhandled_signals,
+                  const std::set<int>& preserve_fds) {
+    preserve_fds_ = preserve_fds;
     argv_strings_.swap(*argv_in);
 
     if (envp) {
@@ -318,6 +321,8 @@ class LaunchAtCrashHandler : public SignalHandler {
       return;
     }
     if (pid == 0) {
+      ClearCloseOnExec(preserve_fds_);
+
       if (set_envp_) {
         execve(argv_[0],
                const_cast<char* const*>(argv_.data()),
@@ -337,6 +342,7 @@ class LaunchAtCrashHandler : public SignalHandler {
 
   ~LaunchAtCrashHandler() = delete;
 
+  std::set<int> preserve_fds_;
   std::vector<std::string> argv_strings_;
   std::vector<const char*> argv_;
   std::vector<std::string> envp_strings_;
@@ -622,7 +628,7 @@ bool CrashpadClient::StartJavaHandlerAtCrash(
                                                       kInvalidFileHandle);
 
   auto signal_handler = LaunchAtCrashHandler::Get();
-  return signal_handler->Initialize(&argv, env, &unhandled_signals_);
+  return signal_handler->Initialize(&argv, env, &unhandled_signals_, {});
 }
 
 // static
@@ -649,7 +655,8 @@ bool CrashpadClient::StartHandlerWithLinkerAtCrash(
     const base::FilePath& metrics_dir,
     const std::string& url,
     const std::map<std::string, std::string>& annotations,
-    const std::vector<std::string>& arguments) {
+    const std::vector<std::string>& arguments,
+    const std::set<int>& preserve_fds) {
   std::vector<std::string> argv =
       BuildArgsToLaunchWithLinker(handler_trampoline,
                                   handler_library,
@@ -661,7 +668,8 @@ bool CrashpadClient::StartHandlerWithLinkerAtCrash(
                                   arguments,
                                   kInvalidFileHandle);
   auto signal_handler = LaunchAtCrashHandler::Get();
-  return signal_handler->Initialize(&argv, env, &unhandled_signals_);
+  return signal_handler->Initialize(
+      &argv, env, &unhandled_signals_, preserve_fds);
 }
 
 // static
@@ -675,7 +683,8 @@ bool CrashpadClient::StartHandlerWithLinkerForClient(
     const std::string& url,
     const std::map<std::string, std::string>& annotations,
     const std::vector<std::string>& arguments,
-    int socket) {
+    int socket,
+    const std::set<int>& preserve_fds) {
   std::vector<std::string> argv =
       BuildArgsToLaunchWithLinker(handler_trampoline,
                                   handler_library,
@@ -686,7 +695,9 @@ bool CrashpadClient::StartHandlerWithLinkerForClient(
                                   annotations,
                                   arguments,
                                   socket);
-  return SpawnSubprocess(argv, env, {socket}, false, nullptr);
+  std::set<int> spawn_preserve_fds = preserve_fds;
+  spawn_preserve_fds.insert(socket);
+  return SpawnSubprocess(argv, env, spawn_preserve_fds, false, nullptr);
 }
 
 #endif
@@ -703,7 +714,7 @@ bool CrashpadClient::StartHandlerAtCrash(
       handler, database, metrics_dir, url, annotations, arguments, attachments);
 
   auto signal_handler = LaunchAtCrashHandler::Get();
-  return signal_handler->Initialize(&argv, nullptr, &unhandled_signals_);
+  return signal_handler->Initialize(&argv, nullptr, &unhandled_signals_, {});
 }
 
 // static
