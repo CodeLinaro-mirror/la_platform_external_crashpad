@@ -258,10 +258,16 @@ CRASHPAD_UTIL_WINDOWS_SOURCES = [
     "win/xp_compat.h",
 ]
 
-CRASPHAD_UTIL_WINDOWS_ASM = [
-    "misc/capture_context_win.asm",
-    "win/safe_terminate_process.asm",
-]
+CRASPHAD_UTIL_WINDOWS_ASM = select({
+    "@platforms//cpu:x86_64": [
+        "misc/capture_context_win.asm",
+        "win/safe_terminate_process.asm",
+    ],
+    "@platforms//cpu:aarch64": [
+        "misc/capture_context_win_arm64.cc",
+    ],
+    "//conditions:default": [],
+})
 
 CRASHPAD_UTIL_WINDOWS_HEADERS = [
     "win/address_types.h",
