@@ -420,13 +420,12 @@ void ProcessSnapshotWin::InitializePebData(
   AddMemorySnapshot(
       peb_data.ProcessParameters, sizeof(process_parameters), &extra_memory_);
 
-  AddMemorySnapshotForUNICODE_STRING(
-      process_parameters.CurrentDirectory.DosPath, &extra_memory_);
+  // CurrentDirectory, CommandLine, and Environment memory snapshots are omitted
+  // to avoid leaking local directory paths, custom AVD names, corporate LDAP,
+  // tokens, and environment variables into post-mortem minidumps.
   AddMemorySnapshotForUNICODE_STRING(process_parameters.DllPath,
                                      &extra_memory_);
   AddMemorySnapshotForUNICODE_STRING(process_parameters.ImagePathName,
-                                     &extra_memory_);
-  AddMemorySnapshotForUNICODE_STRING(process_parameters.CommandLine,
                                      &extra_memory_);
   AddMemorySnapshotForUNICODE_STRING(process_parameters.WindowTitle,
                                      &extra_memory_);
@@ -436,10 +435,6 @@ void ProcessSnapshotWin::InitializePebData(
                                      &extra_memory_);
   AddMemorySnapshotForUNICODE_STRING(process_parameters.RuntimeData,
                                      &extra_memory_);
-  AddMemorySnapshot(
-      process_parameters.Environment,
-      DetermineSizeOfEnvironmentBlock(process_parameters.Environment),
-      &extra_memory_);
 
   // Walk the loader lock which is directly referenced by the PEB.
   ReadLock<Traits>(peb_data.LoaderLock, &extra_memory_);
