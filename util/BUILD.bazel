@@ -674,6 +674,7 @@ objc_library(
 
 cc_test(
     name = "crashpad_util_test",
+    size = "small",
     testonly = True,
     srcs = CRASHPAD_UTIL_TEST_SOURCES +
            select({

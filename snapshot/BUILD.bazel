@@ -483,6 +483,7 @@ cc_crashpad_test_module(
 
 cc_test(
     name = "crashpad_snapshot_test",
+    size = "small",
     srcs = [
         "cpu_context_test.cc",
         "memory_snapshot_test.cc",
