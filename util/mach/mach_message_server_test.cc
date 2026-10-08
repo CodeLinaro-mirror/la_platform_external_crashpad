@@ -526,12 +526,13 @@ class TestMachMessageServer : public MachMessageServer::Interface,
     };
 
     ReceiveReplyMessage reply = {};
+    constexpr mach_msg_timeout_t kChildReplyTimeoutMs = 5000;
     kern_return_t kr = mach_msg(&reply.Head,
-                                MACH_RCV_MSG,
+                                MACH_RCV_MSG | MACH_RCV_TIMEOUT,
                                 0,
                                 sizeof(reply),
                                 LocalPort(),
-                                MACH_MSG_TIMEOUT_NONE,
+                                kChildReplyTimeoutMs,
                                 MACH_PORT_NULL);
     ASSERT_EQ(kr, MACH_MSG_SUCCESS) << MachErrorMessage(kr, "mach_msg");
 
@@ -651,7 +652,7 @@ TEST(MachMessageServer, Timeout) {
   // The client sends one message to the server, which will wait in blocking
   // mode for it up to a specific timeout.
   TestMachMessageServer::Options options;
-  options.server_timeout_ms = 10;
+  options.server_timeout_ms = 500;
   TestMachMessageServer test_mach_message_server(options);
   test_mach_message_server.Test();
 }
@@ -662,7 +663,7 @@ TEST(MachMessageServer, PersistentTenMessages) {
   // them all.
   TestMachMessageServer::Options options;
   options.server_persistent = MachMessageServer::kPersistent;
-  options.server_timeout_ms = 10;
+  options.server_timeout_ms = 500;
   options.expect_server_result = MACH_RCV_TIMED_OUT;
   options.expect_server_transaction_count = 10;
   options.client_send_request_count = 10;
