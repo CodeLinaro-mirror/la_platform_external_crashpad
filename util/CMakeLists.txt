@@ -342,6 +342,7 @@ crashpad_test(
   ENVIRONMENT "CRASHPAD_TEST_DATA_ROOT=${CRASHPAD_TEST_DATA_ROOT}")
 
 if(WIN32)
+  target_link_libraries(http_transport_test_server PRIVATE ws2_32::ws2_32)
   target_link_libraries(crashpad_util_test PRIVATE dbghelp::dbghelp
                                                    rpcrt4::rpcrt4)
 

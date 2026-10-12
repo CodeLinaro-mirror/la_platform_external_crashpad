@@ -546,7 +546,8 @@ if(WIN32)
       rpcrt4
       user32
       version
-      winhttp)
+      winhttp
+      ws2_32)
   foreach(LIB ${WINDOWS_LIBS})
     android_find_windows_library(${LIB})
   endforeach()
