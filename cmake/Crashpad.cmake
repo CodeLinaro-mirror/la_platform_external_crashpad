@@ -102,7 +102,7 @@ function(mig_lib)
         "${mig_OUTPUT_DIR}/${FIL_WE}.h"
         "${mig_OUTPUT_DIR}/${FIL_WE}Server.h"
         --
-        "-I../.." "-I../../compat/mac"
+        "-I${CRASHPAD_ROOT}" "-I${CRASHPAD_ROOT}/compat/mac"
         ${mig_DEFINES}
       COMMENT "Generating mig files from ${FIL}"
       WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}

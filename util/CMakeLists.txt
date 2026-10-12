@@ -194,7 +194,7 @@ if(APPLE)
   mig_lib(
     TARGET crashpad_macos_mig
     SRC ${CMAKE_OSX_SYSROOT}/usr/include/mach/exc.defs
-        ${CMAKE_OSX_SYSROOT}/usr/include/mach/mach_exc.defs
+        ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/xnu/osfmk/mach/mach_exc.defs
         ${CMAKE_OSX_SYSROOT}/usr/include/mach/notify.defs mach/child_port.defs
     DEFINES -DMACH_EXC_SERVER_TASKIDTOKEN -DMACH_EXC_SERVER_TASKIDTOKEN_STATE)
 
