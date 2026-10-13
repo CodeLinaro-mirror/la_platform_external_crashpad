@@ -227,9 +227,12 @@ SNAPSHOT_HDRS_MAC = [
 cc_library(
     name = "headers",
     hdrs = SNAPSHOT_HDRS_COMMON + select({
-        "@platforms//os:linux": SNAPSHOT_HDRS_LINUX + SNAPSHOT_HDRS_POSIX + SNAPSHOT_HDRS_X86,
+        "@platforms//os:linux": SNAPSHOT_HDRS_LINUX + SNAPSHOT_HDRS_POSIX,
         "@platforms//os:osx": SNAPSHOT_HDRS_MAC + SNAPSHOT_HDRS_POSIX,
-        "@platforms//os:windows": SNAPSHOT_HDRS_WINDOWS + SNAPSHOT_HDRS_X86,
+        "@platforms//os:windows": SNAPSHOT_HDRS_WINDOWS,
+        "//conditions:default": [],
+    }) + select({
+        "@platforms//cpu:x86_64": SNAPSHOT_HDRS_X86,
         "//conditions:default": [],
     }),
     include_prefix = "snapshot",
@@ -270,8 +273,14 @@ cc_library(
 
 cc_library(
     name = "snapshot_windows",
-    srcs = SNAPSHOT_SRC_WINDOWS + SNAPSHOT_SRC_X86,
-    hdrs = SNAPSHOT_HDRS_WINDOWS + SNAPSHOT_HDRS_X86,
+    srcs = SNAPSHOT_SRC_WINDOWS + select({
+        "@platforms//cpu:x86_64": SNAPSHOT_SRC_X86,
+        "//conditions:default": [],
+    }),
+    hdrs = SNAPSHOT_HDRS_WINDOWS + select({
+        "@platforms//cpu:x86_64": SNAPSHOT_HDRS_X86,
+        "//conditions:default": [],
+    }),
     copts = CRASHPAD_COMMON_COPTS,
     linkopts = ["/defaultlib:powrprof.lib"],
     target_compatible_with = ["@platforms//os:windows"],
@@ -474,6 +483,7 @@ cc_crashpad_test_module(
 
 cc_test(
     name = "crashpad_snapshot_test",
+    size = "small",
     srcs = [
         "cpu_context_test.cc",
         "memory_snapshot_test.cc",

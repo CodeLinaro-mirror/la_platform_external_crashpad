@@ -43,7 +43,7 @@ bool ModuleSnapshotMac::Initialize(
   INITIALIZATION_STATE_SET_INITIALIZING(initialized_);
 
   process_reader_ = process_reader;
-  name_ = process_reader_module.name;
+  name_ = ::base::FilePath(process_reader_module.name).BaseName().value();
   timestamp_ = process_reader_module.timestamp;
   mach_o_image_reader_ = process_reader_module.reader;
   if (!mach_o_image_reader_) {
