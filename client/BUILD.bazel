@@ -144,6 +144,8 @@ cc_test(
     name = "ring_buffer_annotation_load_test",
     size = "small",
     srcs = ["ring_buffer_annotation_load_test_main.cc"],
+    args = ["--num-loops=100"],
+    copts = CRASHPAD_COMMON_COPTS,
     deps = [
         ":client",
         "//third_party/getopt",

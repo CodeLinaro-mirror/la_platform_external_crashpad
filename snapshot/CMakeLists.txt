@@ -123,6 +123,7 @@ crashpad_test(
         linux/system_snapshot_linux_test.cc
         linux/test_modules.cc
         posix/timezone_test.cc
+        sanitized/memory_snapshot_sanitized_test.cc
         sanitized/process_snapshot_sanitized_test.cc
         sanitized/sanitization_information_test.cc
   DEPS crashpad_client_common
