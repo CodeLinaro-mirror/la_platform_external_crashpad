@@ -49,6 +49,18 @@
 #define EXC_MASK_CORPSE_NOTIFY (1 << EXC_CORPSE_NOTIFY)
 #endif
 
+// 12.0 SDK
+
+#ifndef EXCEPTION_IDENTITY_PROTECTED
+#define EXCEPTION_IDENTITY_PROTECTED 4
+#endif
+
+// 14.0 SDK
+
+#ifndef EXCEPTION_STATE_IDENTITY_PROTECTED
+#define EXCEPTION_STATE_IDENTITY_PROTECTED 5
+#endif
+
 // Don’t expose EXC_MASK_ALL at all, because its definition varies with SDK, and
 // older kernels will reject values that they don’t understand. Instead, use
 // crashpad::ExcMaskAll(), which computes the correct value of EXC_MASK_ALL for
