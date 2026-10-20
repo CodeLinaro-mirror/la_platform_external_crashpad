@@ -164,7 +164,6 @@ cc_library(
 
 cc_test(
     name = "crashpad_minidump_test",
-    size = "small",
     testonly = True,
     srcs = [
         "minidump_annotation_writer_test.cc",

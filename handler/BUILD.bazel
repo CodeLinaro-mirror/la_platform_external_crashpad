@@ -214,7 +214,6 @@ copy_file(
 
 cc_test(
     name = "crashpad_handler_test",
-    size = "small",
     srcs = ["minidump_to_upload_parameters_test.cc"] + select({
         "@platforms//os:linux": ["linux/exception_handler_server_test.cc"],
         "//conditions:default": [],

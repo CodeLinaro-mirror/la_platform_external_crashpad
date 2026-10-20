@@ -142,7 +142,6 @@ cc_library(
 
 cc_test(
     name = "ring_buffer_annotation_load_test",
-    size = "small",
     srcs = ["ring_buffer_annotation_load_test_main.cc"],
     deps = [
         ":client",
@@ -266,7 +265,6 @@ collect_plugins(
 
 cc_test(
     name = "crashpad_client_test",
-    size = "small",
     srcs = [
         "annotation_list_test.cc",
         "annotation_test.cc",

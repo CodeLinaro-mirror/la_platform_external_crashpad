@@ -258,16 +258,10 @@ CRASHPAD_UTIL_WINDOWS_SOURCES = [
     "win/xp_compat.h",
 ]
 
-CRASPHAD_UTIL_WINDOWS_ASM = select({
-    "@platforms//cpu:x86_64": [
-        "misc/capture_context_win.asm",
-        "win/safe_terminate_process.asm",
-    ],
-    "@platforms//cpu:aarch64": [
-        "misc/capture_context_win_arm64.cc",
-    ],
-    "//conditions:default": [],
-})
+CRASPHAD_UTIL_WINDOWS_ASM = [
+    "misc/capture_context_win.asm",
+    "win/safe_terminate_process.asm",
+]
 
 CRASHPAD_UTIL_WINDOWS_HEADERS = [
     "win/address_types.h",
@@ -674,7 +668,6 @@ objc_library(
 
 cc_test(
     name = "crashpad_util_test",
-    size = "small",
     testonly = True,
     srcs = CRASHPAD_UTIL_TEST_SOURCES +
            select({

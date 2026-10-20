@@ -124,7 +124,6 @@ cc_library(
 
 cc_test(
     name = "crashpad_test_test",
-    size = "small",
     srcs = [
         "hex_string_test.cc",
         "main_arguments_test.cc",
