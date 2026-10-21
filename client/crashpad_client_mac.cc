@@ -21,8 +21,11 @@
 #include <stdint.h>
 
 #include <memory>
+#include <set>
+#include <string>
 #include <tuple>
 #include <utility>
+#include <vector>
 
 #include "base/apple/mach_logging.h"
 #include "base/check_op.h"
@@ -100,8 +103,7 @@ bool SetCrashExceptionPorts(exception_handler_t exception_handler) {
 class ScopedPthreadAttrDestroy {
  public:
   explicit ScopedPthreadAttrDestroy(pthread_attr_t* pthread_attr)
-      : pthread_attr_(pthread_attr) {
-  }
+      : pthread_attr_(pthread_attr) {}
 
   ScopedPthreadAttrDestroy(const ScopedPthreadAttrDestroy&) = delete;
   ScopedPthreadAttrDestroy& operator=(const ScopedPthreadAttrDestroy&) = delete;
@@ -137,7 +139,10 @@ class HandlerStarter final : public NotifyServer::DefaultInterface {
       const std::string& url,
       const std::map<std::string, std::string>& annotations,
       const std::vector<std::string>& arguments,
-      bool restartable) {
+      bool restartable,
+      const std::vector<base::FilePath>& attachments,
+      const std::set<FileHandle>& preserve_file_handles,
+      base::apple::ScopedMachReceiveRight embedder_port) {
     base::apple::ScopedMachReceiveRight receive_right(
         NewMachPort(MACH_PORT_RIGHT_RECEIVE));
     if (!receive_right.is_valid()) {
@@ -178,13 +183,22 @@ class HandlerStarter final : public NotifyServer::DefaultInterface {
                      arguments,
                      std::move(receive_right),
                      handler_restarter.get(),
-                     false)) {
+                     false,
+                     attachments,
+                     preserve_file_handles,
+                     std::move(embedder_port))) {
       return base::apple::ScopedMachSendRight();
     }
 
     if (handler_restarter &&
-        handler_restarter->StartRestartThread(
-            handler, database, metrics_dir, url, annotations, arguments)) {
+        handler_restarter->StartRestartThread(handler,
+                                              database,
+                                              metrics_dir,
+                                              url,
+                                              annotations,
+                                              arguments,
+                                              attachments,
+                                              preserve_file_handles)) {
       // The thread owns the object now.
       std::ignore = handler_restarter.release();
     }
@@ -211,7 +225,7 @@ class HandlerStarter final : public NotifyServer::DefaultInterface {
       return KERN_FAILURE;
     }
 
-    // If CommonStart() fails, the receive right will die, and this will just
+    // If CommonStart() fails, all receive rights will die, and this will just
     // be called again for another try.
     CommonStart(handler_,
                 database_,
@@ -221,7 +235,12 @@ class HandlerStarter final : public NotifyServer::DefaultInterface {
                 arguments_,
                 base::apple::ScopedMachReceiveRight(rights),
                 this,
-                true);
+                true,
+                attachments_,
+                preserve_file_handles_,
+                // The embedder port can't be restored during restart because
+                // the client has already transferred ownership.
+                base::apple::ScopedMachReceiveRight());
 
     return KERN_SUCCESS;
   }
@@ -236,8 +255,7 @@ class HandlerStarter final : public NotifyServer::DefaultInterface {
         annotations_(),
         arguments_(),
         notify_port_(NewMachPort(MACH_PORT_RIGHT_RECEIVE)),
-        last_start_time_(0) {
-  }
+        last_start_time_(0) {}
 
   //! \brief Starts a Crashpad handler.
   //!
@@ -266,7 +284,10 @@ class HandlerStarter final : public NotifyServer::DefaultInterface {
                           const std::vector<std::string>& arguments,
                           base::apple::ScopedMachReceiveRight receive_right,
                           HandlerStarter* handler_restarter,
-                          bool restart) {
+                          bool restart,
+                          const std::vector<base::FilePath>& attachments,
+                          const std::set<FileHandle>& preserve_file_handles,
+                          base::apple::ScopedMachReceiveRight embedder_port) {
     DCHECK(!restart || handler_restarter);
 
     if (handler_restarter) {
@@ -344,7 +365,13 @@ class HandlerStarter final : public NotifyServer::DefaultInterface {
       argv.push_back(
           FormatArgumentString("annotation", kv.first + '=' + kv.second));
     }
+    for (const auto& attachment : attachments) {
+      argv.push_back(FormatArgumentString("attachment", attachment.value()));
+    }
     argv.push_back(FormatArgumentInt("handshake-fd", server_write_fd.get()));
+
+    std::set<int> spawn_preserve_fds = preserve_file_handles;
+    spawn_preserve_fds.insert(server_write_fd.get());
 
     // When restarting, reset the system default crash handler first. Otherwise,
     // the crash exception port in the handler will have been inherited from
@@ -354,7 +381,7 @@ class HandlerStarter final : public NotifyServer::DefaultInterface {
     if (!SpawnSubprocess(
             argv,
             nullptr,
-            server_write_fd.get(),
+            spawn_preserve_fds,
             true,
             restart ? CrashpadClient::UseSystemDefaultHandler : nullptr)) {
       return false;
@@ -366,11 +393,13 @@ class HandlerStarter final : public NotifyServer::DefaultInterface {
 
     // Rendezvous with the handler running in the grandchild process.
     if (!child_port_handshake.RunClient(receive_right.get(),
-                                        MACH_MSG_TYPE_MOVE_RECEIVE)) {
+                                        MACH_MSG_TYPE_MOVE_RECEIVE,
+                                        embedder_port.get())) {
       return false;
     }
 
     std::ignore = receive_right.release();
+    std::ignore = embedder_port.release();
     return true;
   }
 
@@ -379,13 +408,17 @@ class HandlerStarter final : public NotifyServer::DefaultInterface {
                           const base::FilePath& metrics_dir,
                           const std::string& url,
                           const std::map<std::string, std::string>& annotations,
-                          const std::vector<std::string>& arguments) {
+                          const std::vector<std::string>& arguments,
+                          const std::vector<base::FilePath>& attachments,
+                          const std::set<FileHandle>& preserve_file_handles) {
     handler_ = handler;
     database_ = database;
     metrics_dir_ = metrics_dir;
     url_ = url;
     annotations_ = annotations;
     arguments_ = arguments;
+    attachments_ = attachments;
+    preserve_file_handles_ = preserve_file_handles;
 
     pthread_attr_t pthread_attr;
     errno = pthread_attr_init(&pthread_attr);
@@ -438,17 +471,17 @@ class HandlerStarter final : public NotifyServer::DefaultInterface {
   std::string url_;
   std::map<std::string, std::string> annotations_;
   std::vector<std::string> arguments_;
+  std::vector<base::FilePath> attachments_;
+  std::set<FileHandle> preserve_file_handles_;
   base::apple::ScopedMachReceiveRight notify_port_;
   uint64_t last_start_time_;
 };
 
 }  // namespace
 
-CrashpadClient::CrashpadClient() : exception_port_(MACH_PORT_NULL) {
-}
+CrashpadClient::CrashpadClient() : exception_port_(MACH_PORT_NULL) {}
 
-CrashpadClient::~CrashpadClient() {
-}
+CrashpadClient::~CrashpadClient() {}
 
 bool CrashpadClient::StartHandler(
     const base::FilePath& handler,
@@ -459,10 +492,9 @@ bool CrashpadClient::StartHandler(
     const std::vector<std::string>& arguments,
     bool restartable,
     bool asynchronous_start,
-    const std::vector<base::FilePath>& attachments) {
-  // Attachments are not implemented on MacOS yet.
-  DCHECK(attachments.empty());
-
+    const std::vector<base::FilePath>& attachments,
+    const std::set<FileHandle>& preserve_file_handles,
+    base::apple::ScopedMachReceiveRight embedder_port) {
   // The “restartable” behavior can only be selected on OS X 10.10 and later. In
   // previous OS versions, if the initial client were to crash while attempting
   // to restart the handler, it would become an unkillable process.
@@ -474,7 +506,10 @@ bool CrashpadClient::StartHandler(
       annotations,
       arguments,
       restartable && (__MAC_OS_X_VERSION_MIN_REQUIRED >= __MAC_10_10 ||
-                      MacOSVersionNumber() >= 10'10'00)));
+                      MacOSVersionNumber() >= 10'10'00),
+      attachments,
+      preserve_file_handles,
+      std::move(embedder_port)));
   if (!exception_port.is_valid()) {
     return false;
   }

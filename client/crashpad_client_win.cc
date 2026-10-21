@@ -22,11 +22,14 @@
 #include <stdint.h>
 #include <string.h>
 
-#include <memory>
-#include <string_view>
+#include <algorithm>
+#include <atomic>
 #include <iostream>
+#include <memory>
+#include <set>
+#include <string_view>
+#include <vector>
 
-#include "base/atomicops.h"
 #include "base/check_op.h"
 #include "base/logging.h"
 #include "base/scoped_generic.h"
@@ -96,7 +99,7 @@ enum class StartupState : int {
 // when the handler is known to have started successfully, or failed to start
 // the value will be updated. The unhandled exception filter will not proceed
 // until one of those two cases happens.
-base::subtle::AtomicWord g_handler_startup_state;
+std::atomic<StartupState> g_handler_startup_state;
 
 // A CRITICAL_SECTION initialized with
 // RTL_CRITICAL_SECTION_FLAG_FORCE_DEBUG_INFO to force it to be allocated with a
@@ -107,20 +110,18 @@ CRITICAL_SECTION g_critical_section_with_debug_info;
 
 void SetHandlerStartupState(StartupState state) {
   DCHECK(state == StartupState::kSucceeded || state == StartupState::kFailed);
-  base::subtle::Release_Store(&g_handler_startup_state,
-                              static_cast<base::subtle::AtomicWord>(state));
+  g_handler_startup_state.store(state, std::memory_order_release);
 }
 
 StartupState BlockUntilHandlerStartedOrFailed() {
   // Wait until we know the handler has either succeeded or failed to start.
-  base::subtle::AtomicWord startup_state;
-  while (
-      (startup_state = base::subtle::Acquire_Load(&g_handler_startup_state)) ==
-      static_cast<int>(StartupState::kNotReady)) {
+  StartupState startup_state;
+  while ((startup_state = g_handler_startup_state.load(
+              std::memory_order_acquire)) == StartupState::kNotReady) {
     Sleep(1);
   }
 
-  return static_cast<StartupState>(startup_state);
+  return startup_state;
 }
 
 #if defined(ADDRESS_SANITIZER)
@@ -147,7 +148,7 @@ LONG WINAPI UnhandledExceptionHandler(EXCEPTION_POINTERS* exception_pointers) {
   // Otherwise, we know the handler startup has succeeded, and we can continue.
 
   // Tracks whether a thread has already entered UnhandledExceptionHandler.
-  static base::subtle::AtomicWord have_crashed;
+  static std::atomic<bool> have_crashed;
 
   // This is a per-process handler. While this handler is being invoked, other
   // threads are still executing as usual, so multiple threads could enter at
@@ -161,7 +162,7 @@ LONG WINAPI UnhandledExceptionHandler(EXCEPTION_POINTERS* exception_pointers) {
   // that we won't save the exception pointers from the second and further
   // crashes, but contention here is very unlikely, and we'll still have a stack
   // that's blocked at this location.
-  if (base::subtle::Barrier_AtomicIncrement(&have_crashed, 1) > 1) {
+  if (have_crashed.exchange(true)) {
     SleepEx(INFINITE, false);
   }
 
@@ -253,25 +254,30 @@ bool IsInheritableHandle(HANDLE handle) {
   return handle_type == FILE_TYPE_DISK || handle_type == FILE_TYPE_PIPE;
 }
 
-// Adds |handle| to |handle_list| if it appears valid, and is not already in
-// |handle_list|.
+// Adds |handle| to |handle_list| if it is valid (not null or
+// INVALID_HANDLE_VALUE) and not already in |handle_list|.
 //
-// Invalid handles (including INVALID_HANDLE_VALUE and null handles) cannot be
-// added to a PPROC_THREAD_ATTRIBUTE_LIST’s PROC_THREAD_ATTRIBUTE_HANDLE_LIST.
-// If INVALID_HANDLE_VALUE appears, CreateProcess() will fail with
-// ERROR_INVALID_PARAMETER. If a null handle appears, the child process will
-// silently not inherit any handles.
+// Invalid handles cannot be added to a PPROC_THREAD_ATTRIBUTE_LIST’s
+// PROC_THREAD_ATTRIBUTE_HANDLE_LIST. If INVALID_HANDLE_VALUE appears,
+// CreateProcess() will fail with ERROR_INVALID_PARAMETER. If a null handle
+// appears, the child process will silently not inherit any handles. If there's
+// a duplicate handle, CreateProcess() fails with ERROR_INVALID_PARAMETER.
+void AddHandleToListIfValid(std::vector<HANDLE>* handle_list, HANDLE handle) {
+  if (handle && handle != INVALID_HANDLE_VALUE &&
+      std::find(handle_list->begin(), handle_list->end(), handle) ==
+          handle_list->end()) {
+    handle_list->push_back(handle);
+  }
+}
+
+// Adds |handle| to |handle_list| if it appears valid and inheritable (as
+// determined by IsInheritableHandle()).
 //
 // Use this function to add handles with uncertain validities.
 void AddHandleToListIfValidAndInheritable(std::vector<HANDLE>* handle_list,
                                           HANDLE handle) {
-  // There doesn't seem to be any documentation of this, but if there's a handle
-  // duplicated in this list, CreateProcess() fails with
-  // ERROR_INVALID_PARAMETER.
-  if (IsInheritableHandle(handle) &&
-      std::find(handle_list->begin(), handle_list->end(), handle) ==
-          handle_list->end()) {
-    handle_list->push_back(handle);
+  if (IsInheritableHandle(handle)) {
+    AddHandleToListIfValid(handle_list, handle);
   }
 }
 
@@ -332,6 +338,7 @@ struct BackgroundHandlerStartThreadData {
       const std::map<std::string, std::string>& annotations,
       const std::vector<std::string>& arguments,
       const std::vector<base::FilePath>& attachments,
+      const std::set<FileHandle>& preserve_file_handles,
       const std::wstring& ipc_pipe,
       ScopedFileHANDLE ipc_pipe_handle)
       : handler(handler),
@@ -341,6 +348,7 @@ struct BackgroundHandlerStartThreadData {
         annotations(annotations),
         arguments(arguments),
         attachments(attachments),
+        preserve_file_handles(preserve_file_handles),
         ipc_pipe(ipc_pipe),
         ipc_pipe_handle(std::move(ipc_pipe_handle)) {}
 
@@ -351,6 +359,7 @@ struct BackgroundHandlerStartThreadData {
   std::map<std::string, std::string> annotations;
   std::vector<std::string> arguments;
   std::vector<base::FilePath> attachments;
+  std::set<FileHandle> preserve_file_handles;
   std::wstring ipc_pipe;
   ScopedFileHANDLE ipc_pipe_handle;
 };
@@ -411,8 +420,7 @@ bool StartHandlerProcess(
   }
   for (const base::FilePath& attachment : data->attachments) {
     AppendCommandLineArgument(
-        FormatArgumentString("attachment", attachment.value()),
-        &command_line);
+        FormatArgumentString("attachment", attachment.value()), &command_line);
   }
 
   ScopedKernelHANDLE this_process(
@@ -488,7 +496,7 @@ bool StartHandlerProcess(
     }
     proc_thread_attribute_list_owner.reset(startup_info.lpAttributeList);
 
-    handle_list.reserve(8);
+    handle_list.reserve(8 + data->preserve_file_handles.size());
     handle_list.push_back(g_signal_exception);
     handle_list.push_back(g_wer_registration.dump_without_crashing);
     handle_list.push_back(g_wer_registration.dump_completed);
@@ -500,6 +508,14 @@ bool StartHandlerProcess(
                                          startup_info.StartupInfo.hStdOutput);
     AddHandleToListIfValidAndInheritable(&handle_list,
                                          startup_info.StartupInfo.hStdError);
+
+    for (HANDLE handle : data->preserve_file_handles) {
+      if (SetHandleInformation(
+              handle, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT)) {
+        AddHandleToListIfValid(&handle_list, handle);
+      }
+    }
+
     rv = update_proc_thread_attribute(
         startup_info.lpAttributeList,
         0,
@@ -609,7 +625,8 @@ bool CrashpadClient::StartHandler(
     const std::vector<std::string>& arguments,
     bool restartable,
     bool asynchronous_start,
-    const std::vector<base::FilePath>& attachments) {
+    const std::vector<base::FilePath>& attachments,
+    const std::set<FileHandle>& preserve_file_handles) {
   DCHECK(ipc_pipe_.empty());
 
   // Both the pipe and the signalling events have to be created on the main
@@ -640,6 +657,7 @@ bool CrashpadClient::StartHandler(
                                                    annotations,
                                                    arguments,
                                                    attachments,
+                                                   preserve_file_handles,
                                                    ipc_pipe_,
                                                    std::move(ipc_pipe_handle));
 
