@@ -96,10 +96,10 @@ namespace crashpad {
 namespace {
 
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || \
-    BUILDFLAG(IS_ANDROID)
+    BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_MAC)
 #define ATTACHMENTS_SUPPORTED 1
 #endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) ||
-        // BUILDFLAG(IS_ANDROID)
+        // BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_MAC)
 
 void Usage(const base::FilePath& me) {
   // clang-format off
@@ -600,7 +600,12 @@ void InitCrashpadLogging() {
 
 int HandlerMain(int argc,
                 char* argv[],
-                const UserStreamDataSources* user_stream_sources) {
+                const UserStreamDataSources* user_stream_sources
+#if BUILDFLAG(IS_APPLE)
+                ,
+                EmbedderPortCallback embedder_port_callback
+#endif  // BUILDFLAG(IS_APPLE)
+) {
   InitCrashpadLogging();
 
   InstallCrashHandler();
@@ -614,10 +619,9 @@ int HandlerMain(int argc,
     // Long options without short equivalents.
     kOptionLastChar = 255,
     kOptionAnnotation,
-#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || \
-    BUILDFLAG(IS_ANDROID)
+#if defined(ATTACHMENTS_SUPPORTED)
     kOptionAttachment,
-#endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_LINUX)
+#endif  // defined(ATTACHMENTS_SUPPORTED)
     kOptionDatabase,
 #if BUILDFLAG(IS_APPLE)
     kOptionHandshakeFD,
@@ -1160,18 +1164,25 @@ int HandlerMain(int argc,
   }
 
   base::apple::ScopedMachReceiveRight receive_right;
+  base::apple::ScopedMachReceiveRight embedder_port;
 
   if (options.handshake_fd >= 0) {
-    receive_right.reset(
+    const ChildPortHandshake::HandshakePorts handshake_ports =
         ChildPortHandshake::RunServerForFD(
             base::ScopedFD(options.handshake_fd),
-            ChildPortHandshake::PortRightType::kReceiveRight));
+            ChildPortHandshake::PortRightType::kReceiveRight);
+    receive_right.reset(handshake_ports.port);
+    embedder_port.reset(handshake_ports.embedder_port);
   } else if (!options.mach_service.empty()) {
     receive_right = BootstrapCheckIn(options.mach_service);
   }
 
   if (!receive_right.is_valid()) {
     return ExitFailure();
+  }
+
+  if (embedder_port.is_valid() && embedder_port_callback) {
+    embedder_port_callback(std::move(embedder_port));
   }
 
   ExceptionHandlerServer exception_handler_server(

@@ -194,8 +194,9 @@ if(APPLE)
   mig_lib(
     TARGET crashpad_macos_mig
     SRC ${CMAKE_OSX_SYSROOT}/usr/include/mach/exc.defs
-        ${CMAKE_OSX_SYSROOT}/usr/include/mach/mach_exc.defs
-        ${CMAKE_OSX_SYSROOT}/usr/include/mach/notify.defs mach/child_port.defs)
+        ${CMAKE_CURRENT_SOURCE_DIR}/../third_party/xnu/osfmk/mach/mach_exc.defs
+        ${CMAKE_OSX_SYSROOT}/usr/include/mach/notify.defs mach/child_port.defs
+    DEFINES -DMACH_EXC_SERVER_TASKIDTOKEN -DMACH_EXC_SERVER_TASKIDTOKEN_STATE)
 
   target_link_libraries(
     crashpad_util PRIVATE crashpad_macos_mig "-framework CoreFoundation"
@@ -341,6 +342,7 @@ crashpad_test(
   ENVIRONMENT "CRASHPAD_TEST_DATA_ROOT=${CRASHPAD_TEST_DATA_ROOT}")
 
 if(WIN32)
+  target_link_libraries(http_transport_test_server PRIVATE ws2_32::ws2_32)
   target_link_libraries(crashpad_util_test PRIVATE dbghelp::dbghelp
                                                    rpcrt4::rpcrt4)
 

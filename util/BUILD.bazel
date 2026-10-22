@@ -45,6 +45,10 @@ py_binary(
 mig(
     name = "mac_mig_gen",
     srcs = ["mach/child_port.defs"],
+    defines = [
+        "MACH_EXC_SERVER_TASKIDTOKEN",
+        "MACH_EXC_SERVER_TASKIDTOKEN_STATE",
+    ],
     sdk_srcs = [
         "exc.defs",
         "mach_exc.defs",
@@ -426,6 +430,7 @@ cc_library(
 cc_library(
     name = "util_win",
     srcs = CRASPHAD_UTIL_WINDOWS_ASM,
+    target_compatible_with = ["@platforms//os:windows"],
 )
 
 cc_library(
